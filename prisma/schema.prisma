@@ -1,0 +1,837 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------
+//  ENUMS
+// ---------------------------------------------------------
+
+enum TransactionType {
+  deposit
+  withdrawl
+  settlement
+  moneyPlant_Deposit
+  moneyPlant_Withdraw
+}
+
+enum ResultTransactionType {
+  exchange
+  bookmaker
+  fancy
+  casino
+  LINE
+  Casino_alt @map("Casino")
+  g_Casino
+}
+
+enum BankAccountType {
+  saving
+  current
+  wallet
+}
+
+enum DepositWithdrawStatus {
+  pending
+  accepted
+  rejected
+}
+
+enum PaymentMethod {
+  bank
+  crypto
+}
+
+enum StatusEnum3 {
+  status_0 @map("0")
+  status_1 @map("1")
+  status_2 @map("2")
+}
+
+enum StatusEnum4 {
+  status_0 @map("0")
+  status_1 @map("1")
+  status_2 @map("2")
+  status_3 @map("3")
+}
+
+// ---------------------------------------------------------
+//  USER & AUTHENTICATION
+// ---------------------------------------------------------
+
+model User {
+  id                    String    @id // We keep the Mongo ObjectId as a String here
+  name                  String    @db.VarChar(100)
+  username              String    @unique @db.VarChar(100)
+  email                 String?   @db.VarChar(100)
+  groupName             String?   @db.VarChar(100)
+  TFA_email             String?   @db.VarChar(100)
+  password              String    @db.VarChar(100)
+  passwordText          String?   @db.VarChar(100)
+  mobileNo              BigInt?
+  emailVerify           DateTime?
+  role                  Float
+  
+  // Hierarchical Data 
+  // Captures the `{ directParent: { parent_id, role } }` logic.
+  directParentId        String?
+  directParentRole      Float?
+  directParent          User?     @relation("DirectParentRel", fields: [directParentId], references: [id])
+  childUsers            User[]    @relation("DirectParentRel")
+
+  // The parents array `[{ parent_id, role }]` mapped as a Join Table
+  parentLinks           UserParent[] @relation("ChildLink")
+  childLinks            UserParent[] @relation("ParentLink")
+
+  bonus                 Float?
+  whiteLabelId          String?
+  
+  colorSharingSetting   Json?     @default("{}") // e.g. { level1: 0, level2: 0... }
+  
+  currencyId            String?
+  currency              Currency? @relation(fields: [currencyId], references: [id])
+  
+  sportShares           Float?
+  betFairShare          Float?
+  commissionPercentage  Float?
+  casino                Int[]     // 0-All, 1-Live, 2-Indian
+  
+  creditReference       Decimal?  @db.Decimal(18, 4)
+  balance               Decimal?  @db.Decimal(18, 4)
+  cash                  Decimal?  @db.Decimal(18, 4)
+  exposureLimit         String?
+  sessionCommission     Decimal?  @db.Decimal(18, 4)
+  
+  ip_address            Json?     @default("{}") // system_ip, browser_ip
+  
+  last_login            DateTime?
+  token                 String?
+  gap_casino_token      String?
+  twoFactorAuthPassword String?
+  twoFactor_is_Enabled  String?   // enabled, disabled
+  status                String?   @default("0") // 0, 1, 2
+  
+  monitoring_manager_accessibility String?
+  layer_accessbility_ids String[]
+  
+  betAllow              Boolean   @default(true)
+  chipSettingId         String?
+  bankAccountId         String?
+  
+  tokenExpiresAt        DateTime?
+  commission            Float?    @default(1)
+  layersBetAllow        Boolean   @default(true)
+  lastLoginIp           String?   @db.VarChar(191)
+  isCommission          Boolean   @default(false)
+  isLayerCommission     Boolean   @default(false)
+  accountNo             String?
+  WhitelabelB2CFirstTimeLogin Boolean @default(true)
+  isBonus               Boolean   @default(true)
+  
+  // 2FA Fields
+  twoFactorVerified     Boolean   @default(false)
+  twoFactorEnabled      Boolean   @default(false)
+  twoFactorSecret       String?   @default("123456")
+  twoFactorRecoveryCodes String[]
+  twoFactorMethod       String?   // app, sms, google, googleAuthenticator
+  twoFactorToken        Json?
+
+  // Relations
+  loginHistories        UserLoginHistory[]
+  bankAccounts          BankAccount[]       @relation("UserBankAccounts")
+  deposits              Deposit[]
+  withdrawals           Withdrawal[]
+  sportBets             SportBet[]
+  sportSettleBets       SportSettleBet[]
+  casinoBets            CasinoBet[]
+  exposures             Exposure[]
+  resultTransactions    ResultTransaction[]
+  outboundTransfers     Transaction[]       @relation("FromUser")
+  inboundTransfers      Transaction[]       @relation("ToUser")
+  gapTransactions       GapCasinoTransaction[]
+  googleAuths           GoogleAuthenticator[]
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+}
+
+// Maps the many-to-many parents array `parents: [{ parent_id, role }]`
+model UserParent {
+  id        String   @id @default(uuid())
+  childId   String
+  parentId  String
+  role      Float?
+  
+  child     User     @relation("ChildLink", fields: [childId], references: [id])
+  parent    User     @relation("ParentLink", fields: [parentId], references: [id])
+
+  @@unique([childId, parentId])
+  @@index([childId])
+  @@index([parentId])
+}
+
+model UserLoginHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  loginDetails Json     @default("[]")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model GoogleAuthenticator {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  secret    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+//  FINANCE AND PAYMENTS
+// ---------------------------------------------------------
+
+model Currency {
+  id        String   @id
+  name      String?  @db.VarChar(100)
+  code      String?  @db.VarChar(100)
+  value     String?  @db.VarChar(100)
+  betFair   Boolean  @default(false)
+  selected  Boolean?
+  
+  users     User[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BankAccount {
+  id              String   @id
+  userId          String
+  user            User     @relation("UserBankAccounts", fields: [userId], references: [id])
+  accountNumber   BigInt?
+  accountName     String?  @db.VarChar(100)
+  bankName        String?  @db.VarChar(100)
+  ifscCode        String?  @db.VarChar(100)
+  upiId           String?  @db.VarChar(100)
+  accountType     BankAccountType @default(saving)
+  bankServiceType String?  @default("Bank") // Bank, Crypto
+  walletAddress   String?  @db.VarChar(550)
+  network         String?  @db.VarChar(50)
+  apiAddress      String?
+  amount          Decimal? @db.Decimal(18, 4)
+  is_active       String?  @default("0") // 0, 1
+  status          String?  // pending, rejected, settled
+  imageUrl        String?
+
+  withdrawals     Withdrawal[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Deposit {
+  id                String   @id
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  amount            Decimal  @db.Decimal(18, 4)
+  remark            String?  @default("No Remark")
+  transactionNumber String
+  imageUrl          String?
+  status            DepositWithdrawStatus @default(pending)
+  depositMethod     PaymentMethod @default(bank)
+  depositedDate     DateTime
+  acceptedDate      DateTime?
+  rejectDate        DateTime?
+  acceptedAdminId   String?
+  rejectedAdminId   String?
+  rejectRemark      String?
+  
+  // Array of parents mapped dynamically as JSON, or we can rely on UserParent model
+  parents           Json?    @default("[]")
+  cryptoPayment     Json?    // Stores the structured crypto object
+
+  createdAt         DateTime @default(now())
+}
+
+model Withdrawal {
+  id                String   @id
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+  bankId            String
+  bankAccount       BankAccount @relation(fields: [bankId], references: [id])
+  amount            Decimal  @db.Decimal(18, 4)
+  status            DepositWithdrawStatus @default(pending)
+  withdrawalMethod  PaymentMethod @default(bank)
+  withdrawalDate    DateTime
+  acceptedDate      DateTime?
+  rejectDate        DateTime?
+  acceptedAdminId   String?
+  rejectedAdminId   String?
+  rejectRemark      String?
+  
+  parents           Json?    @default("[]")
+  cryptoPayment     Json?    
+
+  createdAt         DateTime @default(now())
+}
+
+model Transaction {
+  id               String   @id
+  fromId           String?
+  toId             String?
+  fromUser         User?    @relation("FromUser", fields: [fromId], references: [id])
+  toUser           User?    @relation("ToUser", fields: [toId], references: [id])
+  transaction_type TransactionType?
+  orderId          String?
+  description      String?
+  amount           Decimal? @db.Decimal(18, 4)
+  fromAmount       Decimal? @default(0) @db.Decimal(18, 4)
+  toAmount         Decimal? @default(0) @db.Decimal(18, 4)
+  currency         Json?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model ResultTransaction {
+  id               String   @id
+  userId           String?
+  user             User?    @relation(fields: [userId], references: [id])
+  description      String?
+  pl               Decimal? @db.Decimal(18, 4)
+  prevBalance      Decimal? @db.Decimal(18, 4)
+  betFairPl        Decimal? @db.Decimal(18, 4)
+  type             ResultTransactionType?
+  commission       Decimal? @db.Decimal(18, 4)
+  commissionStatus String?  @default("1") // 1-open, 2-settled
+  sportsId         String?
+  marketId         String?
+  roundId          String?
+  currencyId       String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+//  SPORTS AND HIERARCHY
+// ---------------------------------------------------------
+
+model Sport {
+  id          String   @id
+  name        String?  @db.VarChar(100)
+  slugName    String?  @db.VarChar(100)
+  eventsCount Int?
+  sportsCode  String?  @db.VarChar(100)
+  status      StatusEnum3 @default(status_0)
+  homeView    Json?    // status, priority
+
+  leagues     League[]
+  countries   Country[]
+  venues      Venue[]
+  events      Event[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Country {
+  id          String   @id
+  sportId     String
+  sport       Sport    @relation(fields: [sportId], references: [id])
+  name        String?  @db.VarChar(100)
+  countryCode String?  @db.VarChar(100)
+  status      StatusEnum3 @default(status_1)
+  
+  venues      Venue[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Venue {
+  id          String   @id
+  sportId     String
+  sport       Sport    @relation(fields: [sportId], references: [id])
+  countryId   String?
+  country     Country? @relation(fields: [countryId], references: [id])
+  name        String?  @db.VarChar(100)
+  slugName    String?  @db.VarChar(100)
+  status      StatusEnum3 @default(status_1)
+
+  events      Event[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model League {
+  id          String   @id
+  sportId     String?
+  sport       Sport?   @relation(fields: [sportId], references: [id])
+  name        String?  @db.VarChar(100)
+  slugName    String?  @db.VarChar(100)
+  leagueCode  String?  @db.VarChar(100)
+  status      StatusEnum3 @default(status_0)
+  homeView    Json?
+
+  events      Event[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Event {
+  id          String   @id
+  sportId     String?
+  sport       Sport?   @relation(fields: [sportId], references: [id])
+  leagueId    String?
+  league      League?  @relation(fields: [leagueId], references: [id])
+  venueId     String?
+  venue       Venue?   @relation(fields: [venueId], references: [id])
+  
+  name        String?  @db.VarChar(100)
+  eventId     String?  @unique // Matches `id` logic in Mongo
+  date        String?
+  channelCode String?  @db.VarChar(100)
+  raderId     String?  @db.VarChar(100)
+  status      StatusEnum4 @default(status_0)
+
+  markets     Market[]
+  bets        SportBet[]
+  settleBets  SportSettleBet[]
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Market {
+  id              String   @id
+  eventId         String?
+  event           Event?   @relation(fields: [eventId], references: [id])
+  marketName      String?  @db.VarChar(100)
+  slugName        String?  @db.VarChar(100)
+  marketId        String?  @db.VarChar(100) // Original Betfair/System Market Id
+  bettingType     String?  @db.VarChar(100)
+  priority        Boolean? @default(false)
+  selectionId     String?  @db.VarChar(100)
+  type            String?  @db.VarChar(15)
+  status          StatusEnum3 @default(status_0)
+  marketStartTime String?  @db.VarChar(100)
+  oddLimit        Decimal? @db.Decimal(18, 4)
+
+  runners         Runner[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model MarketSettled {
+  id               String   @id
+  marketName       String?  @db.VarChar(100)
+  slugName         String?  @db.VarChar(100)
+  marketId         String?  @db.VarChar(100)
+  bettingType      String?  @db.VarChar(100)
+  priority         Boolean? @default(false)
+  selectionId      String?  @db.VarChar(100)
+  type             String?  @db.VarChar(15)
+  status           StatusEnum3 @default(status_0)
+  marketStartTime  String?  @db.VarChar(100)
+  marketClosedTime DateTime?
+  protected        Boolean? @default(false)
+  oddLimit         Decimal? @db.Decimal(18, 4)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Runner {
+  id          String   @id
+  marketId    String?
+  market      Market?  @relation(fields: [marketId], references: [id])
+  runnerName  String?  @db.VarChar(100)
+  selectionId String?  @db.VarChar(100)
+  status      StatusEnum3 @default(status_0)
+  sortPriority String?
+  metadataId  String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RunnerMetaData {
+  id                        String   @id
+  sire_name                 String?
+  cloth_number_alpha        String?
+  official_rating           Float?
+  colours_description       String?
+  colours_filename          String?
+  forecastprice_denominator String?
+  damsire_name              String?
+  weight_value              String?
+  sex_type                  String?
+  days_since_last_run       String?
+  wearing                   String?
+  owner_name                String?
+  dam_year_born             String?
+  sire_bred                 String?
+  jockey_name               String?
+  dam_bred                  String?
+  adjusted_rating           Float?
+  runner_id                 String?
+  cloth_number              String?
+  sire_year_born            String?
+  trainer_name              String?
+  colour_type               String?
+  age                       String?
+  damsire_bred              String?
+  jockey_claim              String?
+  form                      String?
+  forecastprice_numerator   String?
+  bred                      String?
+  dam_name                  String?
+  damsire_year_born         String?
+  stall_draw                String?
+  weight_units              String?
+  
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+//  BETS & EXPOSURE
+// ---------------------------------------------------------
+
+model SportBet {
+  id                String   @id
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id])
+  sportId           String?
+  leagueId          String?
+  eventId           String?
+  event             Event?   @relation(fields: [eventId], references: [id])
+  marketId          String?
+  marketType        String?  @db.VarChar(100)
+  bettingType       String?  @db.VarChar(100)
+  selection         String?  @db.VarChar(100)
+  selectionType     String?  @db.VarChar(20)
+  selectionId       String?
+  customerOrderRef  String?
+  betFairId         String?
+  odds              Decimal? @db.Decimal(18, 4)
+  stake             Decimal? @db.Decimal(18, 4)
+  liability         Decimal? @db.Decimal(18, 4)
+  pl                Decimal? @db.Decimal(18, 4)
+  commission        Decimal? @db.Decimal(18, 4)
+  skip              Float?
+  betFairPercentage Float?
+  oddsSize          Float?
+  currency          Json?
+  betfairCurrency   Json?
+  status            String?  @db.VarChar(2)   // 1-10 string
+  commissionStatus  String?  @default("1") @db.VarChar(1)
+  partial           Boolean?
+  complete          Boolean? @default(false)
+  isBonus           Boolean? @default(false)
+  fancyTypeCode     String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([marketId])
+  @@index([userId])
+  @@index([marketType])
+  @@index([bettingType])
+  @@index([betFairId])
+  @@index([status])
+}
+
+model SportSettleBet {
+  id                String   @id
+  userId            String?
+  user              User?    @relation(fields: [userId], references: [id])
+  sportId           String?
+  leagueId          String?
+  eventId           String?
+  event             Event?   @relation(fields: [eventId], references: [id])
+  marketId          String?
+  marketType        String?  @db.VarChar(100)
+  venueId           String?
+  countryId         String?
+  runnerId          String?
+  bettingType       String?  @db.VarChar(100)
+  selection         String?  @db.VarChar(100)
+  selectionType     String?  @db.VarChar(20)
+  selectionId       String?
+  customerOrderRef  String?
+  betFairId         String?
+  odds              Decimal? @db.Decimal(18, 4)
+  stake             Decimal? @db.Decimal(18, 4)
+  liability         Decimal? @db.Decimal(18, 4)
+  pl                Decimal? @db.Decimal(18, 4)
+  commission        Decimal? @db.Decimal(18, 4)
+  skip              Float?
+  betFairPercentage Float?
+  oddsSize          Float?
+  currency          Json?
+  betfairCurrency   Json?
+  status            String?  @db.VarChar(2)
+  commissionStatus  String?  @default("1") @db.VarChar(1)
+  partial           Boolean?
+  complete          Boolean? @default(false)
+  isBonus           Boolean? @default(false)
+  fancyTypeCode     String?
+  isHorseRace       Boolean? @default(false)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([marketId])
+  @@index([userId])
+  @@index([marketType])
+  @@index([bettingType])
+  @@index([betFairId])
+  @@index([status])
+}
+
+model Exposure {
+  id            String   @id
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  marketId      String?  @db.VarChar(100)
+  selectionId   String?  @db.VarChar(100)
+  marketType    String?  @db.VarChar(100)
+  exposure      Decimal? @db.Decimal(18, 4)
+  exposureBonus Decimal? @db.Decimal(18, 4)
+  is_clear      Boolean?
+  on_hold       Boolean? @default(false)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([marketId])
+}
+
+// ---------------------------------------------------------
+//  CASINO
+// ---------------------------------------------------------
+
+model GapCasinoGame {
+  id              String   @id
+  gameId          String?
+  name            String?
+  gameCode        String?
+  category        String?
+  providerName    String?
+  subProviderName String?
+  urlThumb        String?
+  status          Boolean?
+  token           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model GapCasinoTransaction {
+  id              String   @id
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+  gameId          String?
+  name            String?
+  gameCode        String?
+  roundId         String?
+  txnId           String?
+  reqId           String?
+  category        String?
+  providerName    String?
+  subProviderName String?
+  urlThumb        String?
+  enabled         Boolean?
+  stake           Decimal? @db.Decimal(18, 4)
+  pl              Decimal? @db.Decimal(18, 4)
+  currency        Json?
+  description     String?
+  token           String?
+  status          String?  @db.VarChar(1)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model CasinoBet {
+  id            String   @id
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id])
+  providerCode  String?
+  gameCode      String?
+  roundId       String?
+  txnId         String?
+  stake         Decimal? @db.Decimal(18, 4)
+  pl            Decimal? @db.Decimal(18, 4)
+  currency      Json?
+  description   String?
+  status        String?  @db.VarChar(1)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+//  SETTINGS & CONFIGURATIONS
+// ---------------------------------------------------------
+
+model ChipSetting {
+  id        String   @id
+  userId    String?
+  chip      Json?    @default("[]")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GeneralSetting {
+  id                            String   @id
+  roleId                        String?
+  bonus                         Decimal? @default(0) @db.Decimal(18, 4)
+  bonusPercentage               Float?   @default(0)
+  bonusPercentageUpdatedDate    DateTime? @default(now())
+  bonusUpdatedDate              DateTime? @default(now())
+  cryptoPaymentLimit            Decimal? @default(1000) @db.Decimal(18, 4)
+  cryptoPaymentLimitCurrencyId  String?
+  cryptoPaymentLimitUpdatedDate DateTime? @default(now())
+  isLadder                      Boolean? @default(true)
+
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+}
+
+model Setting {
+  id                String   @id
+  sportsId          String?
+  currencyId        String?
+  whiteLabelId      String?
+  stakeSize         Json?    @default("[]")
+  commission        Json?    @default("[]")
+  betDelay          Json?    @default("[]")
+  betfairPercentage Float?
+  bookmakerLimit    Decimal? @default(100000) @db.Decimal(18, 4)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model LeagueSetting {
+  id                String   @id
+  sportId           String?
+  leagueId          String?
+  whiteLabelId      String?
+  currencyId        String?
+  betfairPercentage Float?
+  bookmakerLimit    Decimal? @default(1000000) @db.Decimal(18, 4)
+  stakeSize         Json?    @default("[]")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model VenueSetting {
+  id                String   @id
+  sportId           String?
+  venueId           String?
+  whiteLabelId      String?
+  currencyId        String?
+  betfairPercentage Float?
+  bookmakerLimit    Decimal? @default(1000000) @db.Decimal(18, 4)
+  stakeSize         Json?    @default("[]")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model MatchSetting {
+  id                String   @id
+  sportId           String?
+  leagueId          String?
+  whiteLabelId      String?
+  eventId           String?
+  currencyId        String?
+  stakeSize         Json?    @default("[]")
+  betfairPercentage Json?    // { exchange: Num, line: Num }
+  bookmakerLimit    Decimal? @default(1000000) @db.Decimal(18, 4)
+  status            String?  @default("1") @db.VarChar(1)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model CommissionSetting {
+  id                String   @id
+  MATCH_ODDS        Float?   @default(0)
+  BOOKMAKER         Float?   @default(0)
+  FANCY             Float?   @default(0)
+  TENNIS            Float?   @default(0)
+  LINE              Float?   @default(0)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@map("commisson settings")
+}
+
+model FancyStake {
+  id                          String   @id
+  currencyId                  String?
+  overFancy                   Json?
+  overFancyMatch              Json?
+  lambiFancy                  Json?
+  lambiFancyMatch             Json?
+  firstWicket                 Json?
+  firstWicketMatch            Json?
+  firstGroupedWickets         Json?
+  firstGroupedWicketsMatch    Json?
+  playersBased                Json?
+  playersBasedMatch           Json?
+  playersBoundaries           Json?
+  playersBoundariesMatch      Json?
+  playersTotalBallFaced       Json?
+  playersTotalBallFacedMatch  Json?
+  overBasedRuns               Json?
+  overBasedRunsMatch          Json?
+  runBased                    Json?
+  runBasedMatch               Json?
+  firstWicketBalls            Json?
+  firstWicketBallsMatch       Json?
+  firstWicketBoundaries       Json?
+  firstWicketBoundariesMatch  Json?
+  DefaultStakes               Json?
+  DefaultStakesMatch          Json?
+  leagueId                    String?
+  isLeagueOnly                Boolean?
+  sportsId                    String?
+  matchOnly                   String?
+  isMatchOnly                 Boolean?
+  isDefault                   Boolean? // 'default' is a keyword in Prisma
+
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+}
+
+model Audit {
+  id                             String   @id
+  settlementRollbackDeclaredBy   Json?    // { rollbackBy: String, rollbackUser: String }
+  createdAt                      DateTime @default(now())
+  updatedAt                      DateTime @updatedAt
+}
