@@ -34,6 +34,15 @@ const runETL = async () => {
     
     await connectMongo();
     await prisma.$connect();
+    
+    // Temporarily disable Foreign Key checks for maximum throughput
+    logger.info('🔓 Disabling PostgreSQL Foreign Key constraints for bulk import...');
+    await prisma.$executeRawUnsafe(`ALTER ROLE current_user SET session_replication_role = 'replica';`);
+    
+    // Restart Prisma connection pool so the new role setting takes effect
+    await prisma.$disconnect();
+    await prisma.$connect();
+
     logger.info('✅ Connected rigidly to both MongoDB and Target PostgreSQL');
 
     // Execute Tiers in Topological Order
@@ -41,6 +50,12 @@ const runETL = async () => {
     await loadHierarchy();
     await loadUsers();
     await loadTransactionsAndBets();
+
+    // Re-enable Foreign Key checks
+    logger.info('🔒 Re-enabling PostgreSQL Foreign Key constraints...');
+    await prisma.$executeRawUnsafe(`ALTER ROLE current_user SET session_replication_role = 'origin';`);
+    await prisma.$disconnect();
+    await prisma.$connect();
 
     console.log('\n🎉 ETL Pipeline execution completed successfully!');
 

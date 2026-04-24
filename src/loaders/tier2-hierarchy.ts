@@ -40,6 +40,22 @@ export const loadHierarchy = async () => {
     async (batch) => await prisma.sport.createMany({ data: batch, skipDuplicates: true })
   );
 
+  // 1.5 Load Countries
+  logger.info('Migrating Countries...');
+  await BatchProcessor.processStream(
+    mongoose.connection.db!.collection('countries').find(),
+    (doc: any) => ({
+      id: doc._id.toString(),
+      sportId: doc.sportId?.toString() || '',
+      name: doc.name || null,
+      countryCode: doc.countryCode || null,
+      status: mapStatus3(doc.status),
+      createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(),
+      updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
+    }),
+    async (batch) => await prisma.country.createMany({ data: batch, skipDuplicates: true })
+  );
+
   // 2. Load Leagues
   logger.info('Migrating Leagues...');
   await BatchProcessor.processStream(
@@ -56,6 +72,23 @@ export const loadHierarchy = async () => {
       updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
     }),
     async (batch) => await prisma.league.createMany({ data: batch, skipDuplicates: true })
+  );
+
+  // 2.5 Load Venues
+  logger.info('Migrating Venues...');
+  await BatchProcessor.processStream(
+    mongoose.connection.db!.collection('venues').find(),
+    (doc: any) => ({
+      id: doc._id.toString(),
+      sportId: doc.sportId?.toString() || '',
+      countryId: doc.countryId?.toString() || null,
+      name: doc.name || null,
+      slugName: doc.slugName || null,
+      status: mapStatus3(doc.status),
+      createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(),
+      updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
+    }),
+    async (batch) => await prisma.venue.createMany({ data: batch, skipDuplicates: true })
   );
 
   // 3. Load Events

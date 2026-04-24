@@ -42,3 +42,15 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# AWS DocumentDB TLS Certificate
+# This is a PUBLIC certificate but should NOT be committed —
+# it's large (165KB), AWS rotates it, and devs should always get the latest.
+# Download at setup time: curl -o global-bundle.pem https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+global-bundle.pem
+*.pem
+
+# MongoDB backup snapshots
+backups/
+backup/
+

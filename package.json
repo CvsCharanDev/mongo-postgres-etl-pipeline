@@ -7,12 +7,13 @@
     "start": "ts-node src/index.ts",
     "etl:start": "ts-node src/etl.ts",
     "db:truncate": "ts-node src/scripts/truncate.ts",
+    "db:truncate:postgres": "ts-node src/scripts/truncate-postgres.ts",
     "build": "tsc",
     "generate": "prisma generate",
     "seed:mongo": "ts-node src/seed/seed-mongo.ts"
   },
   "dependencies": {
-    "@prisma/client": "latest",
+    "@prisma/client": "^5.22.0",
     "dotenv": "^16.0.0",
     "mongoose": "^8.0.0",
     "winston": "^3.11.0"
@@ -21,7 +22,7 @@
     "@faker-js/faker": "^8.4.1",
     "@prisma/config": "^7.8.0",
     "@types/node": "^20.0.0",
-    "prisma": "latest",
+    "prisma": "^5.22.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
   }
